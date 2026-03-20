@@ -10,7 +10,7 @@ A production-ready OTP authentication system built with Node.js, Express, Twilio
 * JWT-based authentication (no passwords)
 * Unified authentication for web and mobile apps
 * PostgreSQL user storage (persistent)
-* Redis rate limiting and resend cooldown
+* Redis-backed rate limiting with in-memory fallback
 * Protected routes using JWT middleware
 * Clean and structured API responses
 * Production-ready error handling and logging
@@ -117,14 +117,7 @@ Create a `.env` file:
 ```
 PORT=3000
 
-REDIS_HOST=127.0.0.1
-REDIS_PORT=6380
-
-DB_HOST=localhost
-DB_PORT=5432
-DB_USER=postgres
-DB_PASSWORD=postgres
-DB_NAME=otp_db
+REDIS_URL=redis://default:password@host:port   # optional
 
 TWILIO_ACCOUNT_SID=your_sid
 TWILIO_AUTH_TOKEN=your_token
@@ -132,6 +125,8 @@ TWILIO_VERIFY_SERVICE_SID=your_verify_service_sid
 
 JWT_SECRET=your_secret
 JWT_EXPIRES_IN=7d
+
+DATABASE_URL=postgresql://user:password@host:5432/dbname?sslmode=require
 ```
 
 ---
@@ -159,7 +154,7 @@ Use Postman or any API client:
 
 * No password system (phone-based authentication only)
 * OTP handled securely by Twilio Verify (no local storage)
-* Rate limiting via Redis
+* Rate limiting via Redis when available, otherwise in-memory fallback
 * JWT-based protected routes
 
 ---
