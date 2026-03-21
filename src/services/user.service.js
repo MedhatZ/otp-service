@@ -9,6 +9,8 @@ const mapUserRow = (row) => ({
   id: row.id,
   phoneNumber: row.phone_number,
   createdAt: row.created_at,
+  firstLoginAt: row.first_login_at ?? null,
+  lastLoginAt: row.last_login_at ?? null,
 });
 
 const initUsersTable = async () => {
@@ -24,6 +26,30 @@ const initUsersTable = async () => {
       `);
       await pool.query(`
         CREATE INDEX IF NOT EXISTS idx_users_phone_number ON users (phone_number);
+      `);
+      await pool.query(`
+        ALTER TABLE users
+          ADD COLUMN IF NOT EXISTS first_login_at TIMESTAMP NULL;
+      `);
+      await pool.query(`
+        ALTER TABLE users
+          ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP NULL;
+      `);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS user_logins (
+          id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+          user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+          created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+          ip TEXT,
+          user_agent TEXT,
+          metadata JSONB
+        );
+      `);
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_user_logins_user_id ON user_logins (user_id);
+      `);
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_user_logins_created_at ON user_logins (created_at);
       `);
     })();
   }
@@ -93,9 +119,91 @@ const createUser = async (phoneNumber) => {
   }
 };
 
+const setFirstLogin = async (userId) => {
+  await initUsersTable();
+  try {
+    await pool.query(
+      `UPDATE users
+       SET first_login_at = NOW(), last_login_at = NOW()
+       WHERE id = $1 AND first_login_at IS NULL`,
+      [userId]
+    );
+  } catch (error) {
+    throw new AppError('Failed to set first login.', 500, {
+      reason: 'database_error',
+    });
+  }
+};
+
+const updateLastLogin = async (userId) => {
+  await initUsersTable();
+  try {
+    await pool.query(
+      `UPDATE users
+       SET last_login_at = NOW()
+       WHERE id = $1`,
+      [userId]
+    );
+  } catch (error) {
+    throw new AppError('Failed to update last login.', 500, {
+      reason: 'database_error',
+    });
+  }
+};
+
+const SORT_WHITELIST = {
+  created_at: 'created_at',
+  last_login_at: 'last_login_at',
+};
+
+const findUsersPaginated = async ({
+  page = 1,
+  limit = 20,
+  sort = 'created_at',
+  order = 'asc',
+}) => {
+  try {
+    await initUsersTable();
+    const safePage = Math.max(1, Number(page) || 1);
+    const safeLimit = Math.min(100, Math.max(1, Number(limit) || 20));
+    const sortColumn = SORT_WHITELIST[sort] || SORT_WHITELIST.created_at;
+    const sortOrder = String(order).toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+    const offset = (safePage - 1) * safeLimit;
+
+    const countResult = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM users`
+    );
+    const total = countResult.rows[0]?.total ?? 0;
+
+    const dataResult = await pool.query(
+      `SELECT *
+       FROM users
+       ORDER BY ${sortColumn} ${sortOrder}
+       LIMIT $1 OFFSET $2`,
+      [safeLimit, offset]
+    );
+
+    return {
+      data: dataResult.rows.map(mapUserRow),
+      pagination: {
+        page: safePage,
+        limit: safeLimit,
+        total,
+      },
+    };
+  } catch (error) {
+    throw new AppError('Failed to list users.', 500, {
+      reason: 'database_error',
+    });
+  }
+};
+
 module.exports = {
   initUsersTable,
   findUserByPhone,
   findUserById,
   createUser,
+  setFirstLogin,
+  updateLastLogin,
+  findUsersPaginated,
 };

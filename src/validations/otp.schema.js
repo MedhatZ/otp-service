@@ -35,6 +35,7 @@ const verifyOtpSchema = Joi.object({
     'any.required': 'code is required.',
     'string.empty': 'code is required.',
   }),
+  metadata: Joi.object().unknown(true).optional().allow(null),
 });
 
 module.exports = {

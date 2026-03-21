@@ -12,8 +12,15 @@ const {
   maskPhone,
 } = require('../utils/phone.util');
 const logger = require('../config/logger');
-const { findUserByPhone, createUser } = require('../services/user.service');
+const {
+  findUserByPhone,
+  findUserById,
+  createUser,
+  setFirstLogin,
+  updateLastLogin,
+} = require('../services/user.service');
 const { generateToken } = require('../services/auth.service');
+const { recordUserLogin } = require('../services/login-history.service');
 
 const OTP_PHONE_RATE_LIMIT_MAX_REQUESTS = Number(
   process.env.OTP_PHONE_RATE_LIMIT_MAX_REQUESTS || 5
@@ -76,7 +83,7 @@ const sendOtp = asyncHandler(async (req, res) => {
 
 const verifyOtp = asyncHandler(async (req, res) => {
   const phoneNumber = normalizePhone(req.body.phoneNumber);
-  const { code } = req.body;
+  const { code, metadata } = req.body;
   if (!isValidE164PhoneNumber(phoneNumber)) {
     throw new AppError('Invalid phone number. Use E.164 format.', 400);
   }
@@ -110,7 +117,33 @@ const verifyOtp = asyncHandler(async (req, res) => {
   if (!user) {
     user = await createUser(phoneNumber);
   }
+  user = await findUserById(user.id);
+  const isNewUser = user.firstLoginAt == null;
+  if (isNewUser) {
+    await setFirstLogin(user.id);
+  } else {
+    await updateLastLogin(user.id);
+  }
+  user = await findUserById(user.id);
   const token = await generateToken(user);
+
+  const userAgent = req.headers['user-agent'] || '';
+  try {
+    await recordUserLogin({
+      userId: user.id,
+      ip,
+      userAgent,
+      metadata: metadata != null ? metadata : null,
+    });
+  } catch (err) {
+    logger.error({ err, userId: user.id }, 'Failed to record user login history');
+  }
+
+  logger.info(
+    { userId: user.id, ip, userAgent },
+    'User login recorded'
+  );
+  logger.info({ userId: user.id, isNewUser }, 'User login event');
 
   return res.status(200).json({
     success: true,

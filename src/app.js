@@ -5,6 +5,7 @@ const pinoHttp = require('pino-http');
 
 const otpRoutes = require('./routes/otp.routes');
 const authRoutes = require('./routes/auth.routes');
+const adminRoutes = require('./routes/admin.routes');
 const {
   notFoundHandler,
   errorHandler,
@@ -29,6 +30,7 @@ app.use(globalRateLimit);
 
 app.use('/api/otp', otpRoutes);
 app.use('/api', authRoutes);
+app.use('/api/admin', adminRoutes);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
